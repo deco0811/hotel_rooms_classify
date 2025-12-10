@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飯店 Pickup 動能分類分析</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f4f7f9; color: #333; }
+        .container { max-width: 950px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
+        h1 { color: #2c3e50; text-align: center; border-bottom: 3px solid #3498db; padding-bottom: 10px; margin-bottom: 25px; }
+        
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #e9ecef; border-radius: 8px; background-color: #fff; }
+        .input-flex { display: flex; gap: 20px; }
+        .input-group { flex: 1; }
+        
+        label { display: block; font-weight: 600; margin-bottom: 8px; color: #555; }
+        textarea { width: 100%; height: 150px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; font-family: monospace; }
+        input[type="number"] { width: 100%; padding: 10px; border: 1px solid #3498db; border-radius: 6px; box-sizing: border-box; }
+        
+        button { background-color: #8e44ad; color: white; padding: 15px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 20px; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #732d91; }
+
+        .results-area { display: none; margin-top: 30px; }
+        
+        .prob-bar-container { margin-bottom: 15px; }
+        .prob-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: 600; }
+        .progress { height: 25px; background-color: #e0e0e0; border-radius: 12px; overflow: hidden; }
+        .progress-bar { height: 100%; text-align: center; line-height: 25px; color: white; font-size: 0.85rem; transition: width 0.6s ease; }
+        
+        .bg-high { background-color: #e74c3c; } 
+        .bg-normal { background-color: #f39c12; } 
+        .bg-low { background-color: #3498db; } 
+
+        .analysis-box { background: #f9f9f9; padding: 15px; border-radius: 6px; border-left: 4px solid #8e44ad; margin-bottom: 20px; }
+
+        canvas { max-height: 400px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏷️ 飯店 Pickup 動能分類預測</h1>
+    <p style="text-align: center; color: #7f8c8d;">運用 KNN 演算法，將增長動能分為「強勁、正常、疲軟」三類。</p>
+
+    <div class="section">
+        <div class="input-flex">
+            <div class="input-group">
+                <label>特徵 X: 月初已知預定總間數</label>
+                <textarea id="data_X" placeholder="每行一筆數據...">1500
+1450
+1600
+1700
+1200
+1800
+1300
+1550
+1650
+1400</textarea>
+            </div>
+            <div class="input-group">
+                <label>結果 Y: 月底真正售出總間數</label>
+                <textarea id="data_Total" placeholder="每行一筆數據...">2200
+2100
+2400
+2500
+1500
+2550
+1600
+2250
+2350
+1800</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="section" style="background-color: #fcf4ff; border-color: #e8d0f5;">
+        <label>🎯 本月月初已知預定 ($X_{current}$):</label>
+        <input type="number" id="current_X" value="1520" placeholder="輸入本月目前的數字">
+        
+        <label style="margin-top:15px;">🔍 參考相似歷史月份數量 (K值):</label>
+        <input type="number" id="k_value" value="5" min="1" max="10">
+        <small style="color: #666;">*K=5 代表系統會參考歷史上跟本月月初狀況「最像」的 5 個月份。</small>
+
+        <button id="run_classification">執行分類預測</button>
+    </div>
+
+    <div class="results-area" id="results">
+        
+        <div class="analysis-box">
+            <h3>🤖 預測結果：本月增長動能評估</h3>
+            <p>根據歷史上與本月預定狀況最相似的 <strong id="res_k"></strong> 個月份：</p>
+            
+            <div class="prob-bar-container">
+                <div class="prob-label"><span>🔥 強勁增長 (High Pickup)</span> <span id="prob_high">--%</span></div>
+                <div class="progress"><div id="bar_high" class="progress-bar bg-high" style="width: 0%"></div></div>
+            </div>
+
+            <div class="prob-bar-container">
+                <div class="prob-label"><span>😐 正常增長 (Normal Pickup)</span> <span id="prob_normal">--%</span></div>
+                <div class="progress"><div id="bar_normal" class="progress-bar bg-normal" style="width: 0%"></div></div>
+            </div>
+
+            <div class="prob-bar-container">
+                <div class="prob-label"><span>❄️ 動能疲軟 (Low Pickup)</span> <span id="prob_low">--%</span></div>
+                <div class="progress"><div id="bar_low" class="progress-bar bg-low" style="width: 0%"></div></div>
+            </div>
+            
+            <p style="margin-top: 15px; font-size: 0.9rem; color: #555;">
+                <strong>系統判斷建議：</strong> <span id="final_recommendation">--</span>
+            </p>
+        </div>
+
+        <div class="section">
+            <canvas id="classificationChart"></canvas>
+            <div style="text-align: center; margin-top: 10px; font-size: 0.85rem; color: #777;">
+                *圖表中顏色代表歷史 Pickup 等級。星星★為本月預測落點（基於鄰居平均）。
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+$(document).ready(function() {
+    let myChart = null;
+
+    function parseInput(text) {
+        return text.split('\n').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+    }
+
+    function getPercentile(data, q) {
+        const sorted = [...data].sort((a, b) => a - b);
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        if (sorted[base + 1] !== undefined) {
+            return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+        } else {
+            return sorted[base];
+        }
+    }
+
+    $("#run_classification").click(function() {
+        const dataX = parseInput($("#data_X").val());
+        const dataTotal = parseInput($("#data_Total").val());
+        const currentX = parseFloat($("#current_X").val());
+        const K = parseInt($("#k_value").val());
+
+        if (dataX.length !== dataTotal.length || dataX.length < 5) {
+            alert("錯誤：資料筆數必須相同，且建議至少輸入 5 筆以上歷史資料。");
+            return;
+        }
+        if (isNaN(currentX)) {
+             alert("錯誤：請輸入本月月初預定數。");
+             return;
+        }
+
+        let dataset = dataX.map((x, i) => {
+            return { x: x, pickup: dataTotal[i] - x, originalIndex: i };
+        });
+
+        const pickups = dataset.map(d => d.pickup);
+        const p33 = getPercentile(pickups, 0.33);
+        const p66 = getPercentile(pickups, 0.66);
+
+        dataset.forEach(d => {
+            if (d.pickup > p66) { d.label = 2; d.labelName = "High"; }
+            else if (d.pickup > p33) { d.label = 1; d.labelName = "Normal"; }
+            else { d.label = 0; d.labelName = "Low"; }
+        });
+
+        dataset.forEach(d => {
+            d.distance = Math.abs(d.x - currentX);
+        });
+
+        const neighbors = [...dataset].sort((a, b) => a.distance - b.distance).slice(0, K);
+
+        let votes = { 0: 0, 1: 0, 2: 0 };
+        // 同時計算鄰居的平均 Pickup 值，用來當作本月星星的 Y 軸位置
+        let neighborPickupSum = 0;
+        
+        neighbors.forEach(n => {
+            votes[n.label]++;
+            neighborPickupSum += n.pickup;
+        });
+        
+        // **修正點：計算鄰居的平均 Y 值**
+        const predictedY = neighborPickupSum / K;
+
+        const probHigh = (votes[2] / K) * 100;
+        const probNormal = (votes[1] / K) * 100;
+        const probLow = (votes[0] / K) * 100;
+
+        $("#results").fadeIn();
+        $("#res_k").text(K);
+        $("#prob_high").text(probHigh.toFixed(1) + "%").parent().next().find(".progress-bar").css("width", probHigh + "%");
+        $("#prob_normal").text(probNormal.toFixed(1) + "%").parent().next().find(".progress-bar").css("width", probNormal + "%");
+        $("#prob_low").text(probLow.toFixed(1) + "%").parent().next().find(".progress-bar").css("width", probLow + "%");
+
+        let recommendation = "";
+        if (probHigh >= 50) recommendation = "本月具有**強勁增長潛力**，建議考慮提高房價。";
+        else if (probLow >= 50) recommendation = "本月增長動能**可能疲軟**，建議加強促銷。";
+        else recommendation = "本月預期為**正常增長**，建議維持標準銷售策略。";
+        $("#final_recommendation").html(recommendation);
+
+        const ctx = document.getElementById('classificationChart').getContext('2d');
+        const lowPoints = dataset.filter(d => d.label === 0).map(d => ({x: d.x, y: d.pickup}));
+        const normalPoints = dataset.filter(d => d.label === 1).map(d => ({x: d.x, y: d.pickup}));
+        const highPoints = dataset.filter(d => d.label === 2).map(d => ({x: d.x, y: d.pickup}));
+
+        if (myChart) myChart.destroy();
+
+        myChart = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'Low Pickup',
+                        data: lowPoints,
+                        backgroundColor: '#3498db',
+                        pointRadius: 6
+                    },
+                    {
+                        label: 'Normal Pickup',
+                        data: normalPoints,
+                        backgroundColor: '#f39c12',
+                        pointStyle: 'rect',
+                        pointRadius: 6
+                    },
+                    {
+                        label: 'High Pickup',
+                        data: highPoints,
+                        backgroundColor: '#e74c3c',
+                        pointStyle: 'triangle',
+                        pointRadius: 7
+                    },
+                    {
+                        label: '本月預測點',
+                        // **修正點：使用鄰居的平均 Y 值，確保星星出現在正確的高度**
+                        data: [{x: currentX, y: predictedY}], 
+                        backgroundColor: '#8e44ad',
+                        pointStyle: 'star',
+                        pointRadius: 15,
+                        borderColor: '#000',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: { display: true, text: 'Pickup 分佈 (X:月初預定, Y:Pickup)' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if(context.dataset.label === '本月預測點') {
+                                    return `本月預測: X=${context.parsed.x}, 預期增長=${context.parsed.y.toFixed(0)}`;
+                                }
+                                return `X: ${context.parsed.x}, Pickup: ${context.parsed.y}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { type: 'linear', position: 'bottom', title: { display: true, text: '月初預定 (X)' } },
+                    y: { title: { display: true, text: 'Pickup 增長 (Y)' } }
+                }
+            }
+        });
+    });
+});
+</script>
+
+</body>
+</html>
